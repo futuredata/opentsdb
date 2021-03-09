@@ -113,6 +113,13 @@ public class Config {
   /** Sets the HBase cell timestamp equal to metric timestamp */
   private boolean use_otsdb_timestamp = true;
 
+
+  /** tsd.storage.resolve_duplicates_method
+   *  1: default, overwrite
+   *  2: summarize duplicates together
+   * */
+  private int resolve_duplicates_method = 1;
+
   /** tsd.storage.get_date_tiered_compaction_start */
   /** Sets the time at which you started using use_otsdb_timestamp
    * this value is overriden if you have existing data in your tsdb table
@@ -284,6 +291,14 @@ public class Config {
   /** @param fix_duplicates true if duplicate values should be fixed */
   public void setFixDuplicates(final boolean fix_duplicates) {
     this.fix_duplicates = fix_duplicates;
+  }
+
+  public int resolve_duplicates_method() {
+    return resolve_duplicates_method;
+  }
+
+  public void setResolveDuplicatesMethod(final int method) {
+    this.resolve_duplicates_method = method;
   }
 
   /** @return whether or not to process new or updated TSMetas through trees */
@@ -622,6 +637,7 @@ public class Config {
     default_map.put("tsd.storage.use_otsdb_timestamp", "false");
     default_map.put("tsd.storage.use_max_value", "true");
     default_map.put("tsd.storage.get_date_tiered_compaction_start", "0");
+    default_map.put("tsd.storage.resolve_duplicates_method", "1");
 
     for (Map.Entry<String, String> entry : default_map.entrySet()) {
       if (!properties.containsKey(entry.getKey()))
@@ -741,6 +757,7 @@ public class Config {
     use_otsdb_timestamp = this.getBoolean("tsd.storage.use_otsdb_timestamp");
     get_date_tiered_compaction_start = this.getLong("tsd.storage.get_date_tiered_compaction_start");
     use_max_value = this.getBoolean("tsd.storage.use_max_value");
+    resolve_duplicates_method = this.getInt("tsd.storage.resolve_duplicates_method");
   }
 
   /**
@@ -757,6 +774,10 @@ public class Config {
     Enumeration e = props.propertyNames();
     while (e.hasMoreElements()) {
       String key = (String) e.nextElement();
+	  //[antt] Testing
+      if (key.contains("tsd.storage.resolve_duplicates_method")) {
+        LOG.info("Config {} = {}", key, props.getProperty(key));
+      }
       properties.put(key, props.getProperty(key));
     }
   }

@@ -12,6 +12,7 @@
 // see <http://www.gnu.org/licenses/>.
 package net.opentsdb.core;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -444,7 +445,7 @@ final class CompactionQueue extends ConcurrentSkipListMap<byte[], Boolean> {
             annotations.add(JSON.parseToObject(kv.value(), Annotation.class));
           } else if (qual[0] == HistogramDataPoint.PREFIX) {
             try {
-              HistogramDataPoint histogram = 
+              HistogramDataPoint histogram =
                   Internal.decodeHistogramDataPoint(tsdb, kv);
               histograms.add(histogram);
             } catch (Throwable t) {
@@ -505,6 +506,7 @@ final class CompactionQueue extends ConcurrentSkipListMap<byte[], Boolean> {
       }
     }
 
+    //TODO [antt] like defaultMergeDataPoints
     private void dtcsMergeDataPoints(ByteBufferList compacted_qual, ByteBufferList compacted_val) {
       // Compare timestamps for two KeyValues at the same time, if they are same compare their values
       // Return maximum or minimum value depending upon tsd.storage.use_max_value parameter
@@ -522,29 +524,96 @@ final class CompactionQueue extends ConcurrentSkipListMap<byte[], Boolean> {
           heap.add(col1);
         }
         int ts2 = ts1;
+        double sum = val1;
         while (ts1 == ts2) {
           col2 = heap.peek();
           ts2 = col2 != null ? col2.getTimestampOffsetMs() : ts2;
           if (col2 == null || ts1 != ts2)
             break;
           double val2 = col2.getCellValueAsDouble();
-          if ((tsdb.config.use_max_value() && val2 > val1) || (!tsdb.config.use_max_value() && val1 > val2)) {
-            // Reduce copying of byte arrays by just using col1 variable to reference to either max or min KeyValue
-            col1 = col2;
-            val1 = val2;
-            offsets = col2.getOffsets();
-            offsetLengths = col2.getOffsetLengths();
+
+
+          if (tsdb.config.resolve_duplicates_method() == 2) {
+             sum = col2.getCellValueAsDouble() + sum;
+          } else {
+            if ((tsdb.config.use_max_value() && val2 > val1) || (!tsdb.config.use_max_value() && val1 > val2)) {
+              // Reduce copying of byte arrays by just using col1 variable to reference to either max or min KeyValue
+              col1 = col2;
+              val1 = val2;
+              offsets = col2.getOffsets();
+              offsetLengths = col2.getOffsetLengths();
+            }
           }
           heap.remove();
           if (col2.advance()) {
             heap.add(col2);
           }
         }
-        col1.writeToBuffersFromOffset(compacted_qual, compacted_val, offsets, offsetLengths);
+
+        // [att]
+        if (tsdb.config.resolve_duplicates_method() == 2) {
+          //edit compacted_qual data length
+          byte[] v = getShortestBufferForDoubleValue(sum);
+          byte[] existingQual = col1.getCopyOfCurrentQualifier();
+          byte existingLen = Internal.getValueLengthFromQualifier(existingQual);
+          byte existingFlag = existingQual[existingQual.length -1];
+          // [att] For now convert value to double no matter what their original data
+          // might need to fine tune later
+          if (existingLen < v.length) {
+            byte newLen = Byte.valueOf((byte) (v.length - 1));
+            existingFlag = (byte) ((existingFlag & 0xF8) | newLen); // update new len for flag
+            existingQual[existingQual.length - 1] = (byte) (existingFlag | 0x80); // type double
+            compacted_qual.add(existingQual, 0, existingQual.length);
+            compacted_val.add(v, 0, v.length);
+          } else if (existingLen > v.length) {
+            byte[] copy = new byte[existingLen];
+            System.arraycopy(v, 0, copy, existingLen - v.length, v.length);
+            existingQual[existingQual.length - 1] = (byte) (existingFlag | 0x80);
+            compacted_qual.add(existingQual, 0, existingQual.length);
+            compacted_val.add(copy, 0, copy.length);
+          } else {
+            existingQual[existingQual.length - 1] = (byte) (existingFlag | 0x80);
+            compacted_qual.add(existingQual, 0, existingQual.length);
+            compacted_val.add(v, 0, v.length);
+          }
+        } else {
+          col1.writeToBuffersFromOffset(compacted_qual, compacted_val, offsets, offsetLengths);
+        }
         ms_in_row |= col1.isMilliseconds();
         s_in_row |= !col1.isMilliseconds();
       }
     }
+
+
+    /** [att] */
+    public byte[] getShortestBufferForIntegerValue(long value) {
+      final byte[] v;
+      if (Byte.MIN_VALUE <= value && value <= Byte.MAX_VALUE) {
+        v = new byte[] { (byte) value };
+      } else if (Short.MIN_VALUE <= value && value <= Short.MAX_VALUE) {
+        v = Bytes.fromShort((short) value);
+      } else if (Integer.MIN_VALUE <= value && value <= Integer.MAX_VALUE) {
+        v = Bytes.fromInt((int) value);
+      } else {
+        v = Bytes.fromLong(value);
+      }
+      return v;
+    }
+
+    public byte[] getShortestBufferForDoubleValue(double value) {
+      final byte[] v;
+      if (fitInFloat(value)) {
+        v = Bytes.fromInt(Float.floatToRawIntBits((float) value));
+      } else {
+        v = Bytes.fromLong(Double.doubleToRawLongBits(value));
+      }
+      return v;
+    }
+
+    public boolean fitInFloat(double value) {
+      return ((float) value) == value;
+    }
+    /** [att] <*/
 
     private void defaultMergeDataPoints(ByteBufferList compacted_qual,
             ByteBufferList compacted_val) {
@@ -564,9 +633,48 @@ final class CompactionQueue extends ConcurrentSkipListMap<byte[], Boolean> {
                   + Arrays.toString(existingVal) + ", newer=" + Arrays.toString(discardedVal)
                   + "; set tsd.storage.fix_duplicates=true to fix automatically or run Fsck");
             }
-            LOG.warn("Duplicate timestamp for key=" + Arrays.toString(row.get(0).key())
-                + ", ms_offset=" + ts + ", kept=" + Arrays.toString(existingVal) + ", discarded="
-                + Arrays.toString(discardedVal));
+
+            /** [att] */
+            byte[] existingQual = compacted_qual.getLastSegment();
+            byte existingFlag = existingQual[existingQual.length - 1];
+            byte[] v;
+            if (tsdb.config.resolve_duplicates_method() == 1) {
+              LOG.warn("Duplicate timestamp for key=" + Arrays.toString(row.get(0).key())
+                      + ", ms_offset=" + ts + ", kept=" + Arrays.toString(existingVal) + ", discarded="
+                      + Arrays.toString(discardedVal));
+            } else if (tsdb.config.resolve_duplicates_method() == 2) {
+              if (col.isCurrentValueInteger()) {
+                long current = col.getCellValueAsLong();
+                long existingValue = RowSeq.extractIntegerValue(existingVal, 0, existingFlag);
+                long sum = current + existingValue;
+                v = getShortestBufferForIntegerValue(sum);
+              } else {
+                double current =  col.getCellValueAsDouble();
+                double existingValue = RowSeq.extractFloatingPointValue(existingVal, 0, existingFlag);
+                double sum = current + existingValue;
+                v = getShortestBufferForDoubleValue(sum);
+              }
+              //edit compacted_qual data length
+              byte existingLen = Internal.getValueLengthFromQualifier(existingQual);
+              if ( existingLen < v.length) {
+                byte newLen = Byte.valueOf((byte) (v.length - 1));
+                existingQual[existingQual.length - 1] = (byte) ((existingFlag & 0xF8) | newLen);
+                compacted_qual.removeLastSegment();
+                compacted_qual.add(existingQual, 0, existingQual.length);
+                compacted_val.removeLastSegment();
+                compacted_val.add(v, 0, v.length);
+              } else if (existingLen > v.length) {
+                byte[] copy = new byte[existingLen];
+                System.arraycopy(v, 0, copy, existingLen - v.length, v.length);
+                compacted_val.removeLastSegment();
+                compacted_val.add(copy, 0, copy.length);
+              } else {
+                compacted_val.removeLastSegment();
+                compacted_val.add(v, 0, v.length);
+              }
+
+            }
+            /* [att] <*/
           } else {
             duplicates_same.incrementAndGet();
           }

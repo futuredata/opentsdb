@@ -64,21 +64,23 @@ public class QueryExample {
     
     // use any string format from
     // http://opentsdb.net/docs/build/html/user_guide/query/dates.html
-    query.setStart("1h-ago");
+    query.setStart("72h-ago");
     // Optional: set other global query params
 
     // at least one sub query required. This is where you specify the metric and
     // tags
     final TSSubQuery subQuery = new TSSubQuery();
-    subQuery.setMetric("my.tsdb.test.metric");
+    subQuery.setMetric("sys.cpu.load.1m");
 
     // filters are optional but useful.
     final List<TagVFilter> filters = new ArrayList<TagVFilter>(1);
     filters.add(new TagVFilter.Builder()
-        .setType("literal_or")
-        .setFilter("example1")
-        .setTagk("script")
-        .setGroupBy(true)
+        .setType("wildcard")
+        .setFilter("*")
+//        .setType("literal_or")
+//        .setFilter("web01|web02")
+        .setTagk("host")
+        .setGroupBy(false)
         .build());
     subQuery.setFilters(filters);
     
@@ -177,9 +179,9 @@ public class QueryExample {
          * the actual iterator at the beginning).
          */
         while (it.hasNext()) {
-          final DataPoint dp = it.next();
+          final DataPoint dp = it.next(); //copy data from scan(s) to internal buffer (AggregatorIterator)
           System.out.println("  " + dp.timestamp() + " "
-              + (dp.isInteger() ? dp.longValue() : dp.doubleValue()));
+              + (dp.isInteger() ? dp.longValue() : dp.doubleValue())); // calculate value from internal buffer
         }
         System.out.println("");
       }

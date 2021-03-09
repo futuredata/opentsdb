@@ -186,7 +186,7 @@ final class ColumnDatapointIterator implements Comparable<ColumnDatapointIterato
     return true;
   }
 
-  // order in ascending order by timestamp, descending order by row timestamp (so we find the
+  // order in ascending order by timestamp, descending order by row timestamp (i.e. timestamp added by HBase for each cell. So we find the
   // entry we are going to keep first, and don't have to copy over it)
   @Override
   public int compareTo(ColumnDatapointIterator o) {
@@ -209,6 +209,19 @@ final class ColumnDatapointIterator implements Comparable<ColumnDatapointIterato
           : ((copy.length == 2) ? bb.getShort() : ((copy.length == 4) ? bb.getInt() : bb.getLong())));
     }
   }
+
+  /** [att] */
+  public long getCellValueAsLong() {
+    byte[] copy = this.getCopyOfCurrentValue();
+    ByteBuffer bb = ByteBuffer.wrap(copy);
+      return ((copy.length == 1) ? bb.get()
+              : ((copy.length == 2) ? bb.getShort() : ((copy.length == 4) ? bb.getInt() : bb.getLong())));
+  }
+
+  public boolean isCurrentValueInteger() {
+    return !Internal.isFloat(this.getCopyOfCurrentQualifier());
+  }
+  /* [att] <*/
 
   @Override
   public String toString() {

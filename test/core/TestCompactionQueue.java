@@ -106,6 +106,232 @@ public final class TestCompactionQueue {
   }
 
   @Test
+  public void sumSecondCompactOverwriteFix() throws Exception {
+    // In this test the row has already been compacted, and a new value for an
+    // old data point was written in the mean time
+    ArrayList<KeyValue> kvs = new ArrayList<KeyValue>(2);
+    ArrayList<Annotation> annotations = new ArrayList<Annotation>(0);
+    // This is 2 values already compacted together.
+    final byte[] qual1 = { 0x00, 0x07 };
+    final byte[] val1 = Bytes.fromLong(4L);
+    final byte[] qual2 = { 0x00, 0x27 };
+    final byte[] val2 = Bytes.fromLong(5L);
+    final byte[] qual12 = MockBase.concatByteArrays(qual1, qual2);
+    kvs.add(makekv(qual12, MockBase.concatByteArrays(val1, val2, ZERO)));
+    // This data point came late.  Note that its time delta matches the first point with
+    // a different value, so it should replace the earlier one.
+    final byte[] qual3 = { 0x00, 0x07 };
+    final byte[] val3 = Bytes.fromLong(6L);
+    kvs.add(makekv(qual3, val3));
+
+    when(tsdb.config.resolve_duplicates_method()).thenReturn(2);
+    final KeyValue kv = compactionq.compact(kvs, annotations, null);
+    assertArrayEquals(MockBase.concatByteArrays(qual3, qual2),
+            kv.qualifier());
+    final byte[] sumVal = Bytes.fromLong(4L + 6L);
+    assertArrayEquals(MockBase.concatByteArrays(sumVal, val2, new byte[] { 0 }),
+            kv.value());
+
+    // We had one row to compact, so one put to do.
+    verify(tsdb, times(1)).put(KEY, MockBase.concatByteArrays(qual3, qual2),
+            MockBase.concatByteArrays(sumVal, val2, new byte[] { 0 }), kvCount - 1);
+    // And we had to delete the individual cell, but we overwrite the pre-existing compacted cell
+    // rather than delete it.
+    verify(tsdb, times(1)).delete(eq(KEY), eqAnyOrder(new byte[][] {qual3}));
+  }
+
+  @Test
+  public void sumOutOfOrderDuplicationTripleCompacted() throws Exception {
+    // Here we have a row with #kvs > scanner.maxNumKeyValues and the result
+    // that was compacted during a query. The result is a bunch of compacted
+    // columns. We want to make sure that we can merge them nicely
+    ArrayList<KeyValue> kvs = new ArrayList<KeyValue>(5);
+    ArrayList<Annotation> annotations = new ArrayList<Annotation>(0);
+    final byte[] qual1 = { 0x00, 0x07 };
+    final byte[] val1 = Bytes.fromLong(4L);
+    final byte[] qual2 = { 0x00, 0x27 };
+    final byte[] val2 = Bytes.fromLong(5L);
+    final byte[] qual12 = MockBase.concatByteArrays(qual1, qual2);
+    // 2nd compaction
+    final byte[] qual3 = { 0x00, 0x27 };
+    final byte[] val3 = Bytes.fromLong(6L);
+    final byte[] qual4 = { 0x00, 0x47 };
+    final byte[] val4 = Bytes.fromLong(7L);
+    final byte[] qual34 = MockBase.concatByteArrays(qual3, qual4);
+    // 3rd compaction
+    final byte[] qual5 = { 0x00, 0x47 };
+    final byte[] val5 = Bytes.fromLong(8L);
+    final byte[] qual6 = { 0x00, 0x67 };
+    final byte[] val6 = Bytes.fromLong(9L);
+    final byte[] qual56 = MockBase.concatByteArrays(qual5, qual6);
+    kvs.add(makekv(qual12, MockBase.concatByteArrays(val1, val2, ZERO)));
+    kvs.add(makekv(qual56, MockBase.concatByteArrays(val5, val6, ZERO)));
+    kvs.add(makekv(qual34, MockBase.concatByteArrays(val3, val4, ZERO)));
+
+    when(tsdb.config.resolve_duplicates_method()).thenReturn(2);
+    final KeyValue kv = compactionq.compact(kvs, annotations, null);
+    final byte[] compactQual = MockBase.concatByteArrays(qual1, qual2, qual4, qual6);
+    final byte[] sumVal23 = Bytes.fromLong(5L + 6L);
+    final byte[] sumVal45 = Bytes.fromLong(7L + 8L);
+    assertArrayEquals(compactQual, kv.qualifier());
+    assertArrayEquals(
+            MockBase.concatByteArrays(val1, sumVal23, sumVal45, val6, ZERO),
+            kv.value());
+
+    // We wrote only the combined column.
+    verify(tsdb, times(1)).put(KEY,
+            MockBase.concatByteArrays(compactQual),
+            MockBase.concatByteArrays(val1, sumVal23, sumVal45, val6, ZERO), kvCount - 1);
+    // And we had to delete the 3 partially compacted columns.
+    verify(tsdb, times(1)).delete(eq(KEY), eqAnyOrder(new byte[][] { qual12, qual34, qual56 }));
+  }
+
+  @Test
+  public void sumOverlapedDuplicationTripleCompacted() throws Exception {
+    // Here we have a row with #kvs > scanner.maxNumKeyValues and the result
+    // that was compacted during a query. The result is a bunch of compacted
+    // columns. We want to make sure that we can merge them nicely
+    ArrayList<KeyValue> kvs = new ArrayList<KeyValue>(5);
+    ArrayList<Annotation> annotations = new ArrayList<Annotation>(0);
+    final byte[] qual1 = { 0x00, 0x07 };
+    final byte[] val1 = Bytes.fromLong(4L);
+    final byte[] qual2 = { 0x00, 0x27 };
+    final byte[] val2 = Bytes.fromLong(5L);
+    final byte[] qual12 = MockBase.concatByteArrays(qual1, qual2);
+    // 2nd compaction
+    final byte[] qual3 = { 0x00, 0x27 };
+    final byte[] val3 = Bytes.fromLong(6L);
+    final byte[] qual4 = { 0x00, 0x47 };
+    final byte[] val4 = Bytes.fromLong(7L);
+    final byte[] qual34 = MockBase.concatByteArrays(qual3, qual4);
+    // 3rd compaction
+    final byte[] qual5 = { 0x00, 0x47 };
+    final byte[] val5 = Bytes.fromLong(8L);
+    final byte[] qual6 = { 0x00, 0x67 };
+    final byte[] val6 = Bytes.fromLong(9L);
+    final byte[] qual56 = MockBase.concatByteArrays(qual5, qual6);
+    kvs.add(makekv(qual12, MockBase.concatByteArrays(val1, val2, ZERO)));
+    kvs.add(makekv(qual34, MockBase.concatByteArrays(val3, val4, ZERO)));
+    kvs.add(makekv(qual56, MockBase.concatByteArrays(val5, val6, ZERO)));
+
+    when(tsdb.config.resolve_duplicates_method()).thenReturn(2);
+    final KeyValue kv = compactionq.compact(kvs, annotations, null);
+    final byte[] compactQual = MockBase.concatByteArrays(qual1, qual2, qual4, qual6);
+    final byte[] sumVal23 = Bytes.fromLong(5L + 6L);
+    final byte[] sumVal45 = Bytes.fromLong(7L + 8L);
+    assertArrayEquals(compactQual, kv.qualifier());
+    assertArrayEquals(
+            MockBase.concatByteArrays(val1, sumVal23, sumVal45, val6, ZERO),
+            kv.value());
+
+    // We wrote only the combined column.
+    verify(tsdb, times(1)).put(KEY,
+            MockBase.concatByteArrays(compactQual),
+            MockBase.concatByteArrays(val1, sumVal23, sumVal45, val6, ZERO), kvCount - 1);
+    // And we had to delete the 3 partially compacted columns.
+    verify(tsdb, times(1)).delete(eq(KEY), eqAnyOrder(new byte[][] { qual12, qual34, qual56 }));
+  }
+
+  @Test
+  public void sumDuplicationTripleCompacted() throws Exception {
+    // Here we have a row with #kvs > scanner.maxNumKeyValues and the result
+    // that was compacted during a query. The result is a bunch of compacted
+    // columns. We want to make sure that we can merge them nicely
+    ArrayList<KeyValue> kvs = new ArrayList<KeyValue>(5);
+    ArrayList<Annotation> annotations = new ArrayList<Annotation>(0);
+    final byte[] qual1 = { 0x00, 0x07 };
+    final byte[] val1 = Bytes.fromLong(4L);
+    final byte[] qual2 = { 0x00, 0x27 };
+    final byte[] val2 = Bytes.fromLong(5L);
+    final byte[] qual12 = MockBase.concatByteArrays(qual1, qual2);
+    // 2nd compaction
+    final byte[] qual3 = { 0x00, 0x07 };
+    final byte[] val3 = Bytes.fromLong(6L);
+    final byte[] qual4 = { 0x00, 0x47 };
+    final byte[] val4 = Bytes.fromLong(7L);
+    final byte[] qual34 = MockBase.concatByteArrays(qual3, qual4);
+    // 3rd compaction
+    final byte[] qual5 = { 0x00, 0x57 };
+    final byte[] val5 = Bytes.fromLong(8L);
+    final byte[] qual6 = { 0x00, 0x67 };
+    final byte[] val6 = Bytes.fromLong(9L);
+    final byte[] qual56 = MockBase.concatByteArrays(qual5, qual6);
+    kvs.add(makekv(qual12, MockBase.concatByteArrays(val1, val2, ZERO)));
+    kvs.add(makekv(qual34, MockBase.concatByteArrays(val3, val4, ZERO)));
+    kvs.add(makekv(qual56, MockBase.concatByteArrays(val5, val6, ZERO)));
+
+    when(tsdb.config.resolve_duplicates_method()).thenReturn(2);
+    final KeyValue kv = compactionq.compact(kvs, annotations, null);
+    final byte[] compactQual = MockBase.concatByteArrays(qual1, qual2, qual4, qual56);
+    final byte[] sumVal13 = Bytes.fromLong(4L + 6L);
+    assertArrayEquals(compactQual, kv.qualifier());
+    assertArrayEquals(
+            MockBase.concatByteArrays(sumVal13, val2, val4, val5, val6, ZERO),
+            kv.value());
+
+    // We wrote only the combined column.
+    verify(tsdb, times(1)).put(KEY,
+            MockBase.concatByteArrays(compactQual),
+            MockBase.concatByteArrays(sumVal13, val2, val4, val5, val6, ZERO), kvCount - 1);
+    // And we had to delete the 3 partially compacted columns.
+    verify(tsdb, times(1)).delete(eq(KEY), eqAnyOrder(new byte[][] { qual12, qual34, qual56 }));
+  }
+
+  @Test
+  public void sumTwoDoubleDuplicationsCompacted() throws Exception {
+    Random rnd = new Random();
+    ArrayList<KeyValue> kvs = new ArrayList<KeyValue>(2);
+    ArrayList<Annotation> annotations = new ArrayList<Annotation>(0);
+    long ts1 = Math.abs(rnd.nextLong());
+    final byte[] qual1 = { (byte) 0xF0, 0x00, 0x00, 0x0F };
+    final byte[] val1 = Bytes.fromLong(Double.doubleToRawLongBits(4.55d));
+    kvs.add(makekvWithTs(qual1, ts1, val1));
+    long ts2 = Math.abs(rnd.nextLong());
+    final byte[] qual2 = { (byte) 0xF0, 0x00, 0x00, 0x0F };
+    final byte[] val2 = Bytes.fromLong(Double.doubleToRawLongBits(5.));
+    kvs.add(makekvWithTs(qual2, ts2, val2));
+//    long ts3 = Math.abs(rnd.nextLong());
+//    final byte[] qual3 = { (byte) 0xF0, 0x00, 0x02, 0x07 };
+//    final byte[] val3 = Bytes.fromLong(2L);
+//    kvs.add(makekvWithTs(qual3, ts3, val3));
+    final byte[] compactedVal = Bytes.fromLong(Double.doubleToRawLongBits(5. + 4.55));
+
+    when(tsdb.config.resolve_duplicates_method()).thenReturn(2);
+    final KeyValue kv = compactionq.compact(kvs, annotations, null);
+    assertArrayEquals(MockBase.concatByteArrays(qual1), kv.qualifier());
+//    assertArrayEquals(MockBase.concatByteArrays(compactedVal, ZERO), kv.value());
+    assertArrayEquals(compactedVal, kv.value());
+//    assert(kv.timestamp() == Math.max(ts1, Math.max(ts2)));
+  }
+
+  @Test
+  public void sumTwoLongDuplicationsCompacted() throws Exception {
+    Random rnd = new Random();
+    ArrayList<KeyValue> kvs = new ArrayList<KeyValue>(2);
+    ArrayList<Annotation> annotations = new ArrayList<Annotation>(0);
+    long ts1 = Math.abs(rnd.nextLong());
+    final byte[] qual1 = { (byte) 0xF0, 0x00, 0x00, 0x07 };
+    final byte[] val1 = Bytes.fromLong(4L);
+    kvs.add(makekvWithTs(qual1, ts1, val1));
+    long ts2 = Math.abs(rnd.nextLong());
+    final byte[] qual2 = { (byte) 0xF0, 0x00, 0x00, 0x07 };
+    final byte[] val2 = Bytes.fromLong(5L);
+    kvs.add(makekvWithTs(qual2, ts2, val2));
+//    long ts3 = Math.abs(rnd.nextLong());
+//    final byte[] qual3 = { (byte) 0xF0, 0x00, 0x02, 0x07 };
+//    final byte[] val3 = Bytes.fromLong(2L);
+//    kvs.add(makekvWithTs(qual3, ts3, val3));
+      final byte[] compactedVal = Bytes.fromLong(4L + 5L);
+
+    when(tsdb.config.resolve_duplicates_method()).thenReturn(2);
+    final KeyValue kv = compactionq.compact(kvs, annotations, null);
+    assertArrayEquals(MockBase.concatByteArrays(qual1), kv.qualifier());
+//    assertArrayEquals(MockBase.concatByteArrays(compactedVal, ZERO), kv.value());
+    assertArrayEquals(compactedVal, kv.value());
+//    assert(kv.timestamp() == Math.max(ts1, Math.max(ts2)));
+  }
+
+  @Test
   public void useMaxTsWhileCompacting() throws Exception {
       Random rnd = new Random();
 	    ArrayList<KeyValue> kvs = new ArrayList<KeyValue>(2);
@@ -127,7 +353,7 @@ public final class TestCompactionQueue {
 	    final KeyValue kv = compactionq.compact(kvs, annotations, null);
 	    assertArrayEquals(MockBase.concatByteArrays(qual1, qual2, qual3), kv.qualifier());
 	    assertArrayEquals(MockBase.concatByteArrays(val1, val2, val3, ZERO), kv.value());
-	    assert(kv.timestamp() == Math.max(ts1, Math.max(ts2, ts3)));
+        assert(kv.timestamp() == Math.max(ts1, Math.max(ts2, ts3)));
   }
 
   @Test

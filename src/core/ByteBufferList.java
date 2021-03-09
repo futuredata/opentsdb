@@ -81,6 +81,20 @@ final class ByteBufferList {
   }
 
   /**
+   * Remove the last segment
+   * @return last segment and remove it from list
+   * @author: att
+   */
+  public BufferSegment removeLastSegment() {
+    if (segments.size() > 0) {
+      BufferSegment seg = segments.remove(segments.size() -  1);
+      total_length -= seg.len;
+      return seg;
+    }
+    return null;
+  }
+
+  /**
    * Get the accumulated bytes as a single byte array (may be a zero-byte array if empty).
    * 
    * @param padding the number of additional bytes to include at the end
