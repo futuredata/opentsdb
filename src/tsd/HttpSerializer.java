@@ -851,18 +851,19 @@ public abstract class HttpSerializer {
    * @return A standard JSON error
    */
   public ChannelBuffer formatErrorV1(final BadRequestException exception) {
+    String exMsg = exception.getMessage() == null ? " " : exception.getMessage();
     StringBuilder output = 
-      new StringBuilder(exception.getMessage().length() * 2);
+      new StringBuilder(exMsg.length() * 2);
     final String jsonp = query.getQueryStringParam("jsonp");
     if (jsonp != null && !jsonp.isEmpty()) {
       output.append(query.getQueryStringParam("jsonp") + "(");
     }
     output.append("{\"error\":{\"code\":");
     output.append(exception.getStatus().getCode());
-    final StringBuilder msg = new StringBuilder(exception.getMessage().length());
-    HttpQuery.escapeJson(exception.getMessage(), msg);
+    final StringBuilder msg = new StringBuilder(exMsg.length());
+    HttpQuery.escapeJson(exMsg, msg);
     output.append(",\"message\":\"").append(msg.toString()).append("\"");
-    if (!exception.getDetails().isEmpty()) {
+    if (exception.getDetails() != null && !exception.getDetails().isEmpty()) {
       final StringBuilder details = new StringBuilder(
           exception.getDetails().length());
       HttpQuery.escapeJson(exception.getDetails(), details);

@@ -49,7 +49,7 @@ public class GnuplotInstaller {
     boolean found = false;
     final String PATH = System.getenv("PATH");
     if(PATH!=null) {
-      System.out.println("PATH: " + PATH);
+//      System.out.println("PATH: " + PATH);
       final String[] paths = PATH.split(File.pathSeparator);
       for(String path: paths) {
         LOG.debug("Inspecting PATH for Gnuplot Exe: [{}]", path);
