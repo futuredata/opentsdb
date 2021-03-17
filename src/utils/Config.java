@@ -117,6 +117,7 @@ public class Config {
   /** tsd.storage.resolve_duplicates_method
    *  1: default, overwrite
    *  2: summarize duplicates together
+   *  Only affect when tsd.storage.fix_duplicates = true
    * */
   private int resolve_duplicates_method = 1;
 

@@ -37,7 +37,7 @@ public class GnuplotInstaller {
   public static final String GP_BATCH_FILE_NAME = IS_WINDOWS ? "mygnuplot.bat" : "mygnuplot.sh";
   /** The name of the gnuplot executable */
   public static final String GP_NAME = IS_WINDOWS ? "gnuplot.exe" : "gnuplot";
-  
+
   /** The directory where shell file will be installed */
   public static final String GP_DIR = System.getProperty("java.io.tmpdir") + File.separator + ".tsdb" + File.separator + "tsdb-gnuplot";
   /** The java/io file representing the gnuplot shell file */
@@ -49,6 +49,7 @@ public class GnuplotInstaller {
     boolean found = false;
     final String PATH = System.getenv("PATH");
     if(PATH!=null) {
+      System.out.println("PATH: " + PATH);
       final String[] paths = PATH.split(File.pathSeparator);
       for(String path: paths) {
         LOG.debug("Inspecting PATH for Gnuplot Exe: [{}]", path);
