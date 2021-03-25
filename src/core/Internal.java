@@ -12,6 +12,7 @@
 // see <http://www.gnu.org/licenses/>.
 package net.opentsdb.core;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -1103,4 +1104,50 @@ public final class Internal {
     return new SimpleHistogramDataPointAdapter(histogram, timestamp);
   }
 
+  /** [att] */
+  public static double getValueAsDouble(byte[] value) {
+    byte[] copy = Arrays.copyOfRange(value, 0, value.length);
+    ByteBuffer bb = ByteBuffer.wrap(copy);
+    return copy.length == 4 ? bb.getFloat() : bb.getDouble();
+  }
+
+  public static long getValueAsLong(byte[] value) {
+    byte[] copy = Arrays.copyOfRange(value, 0, value.length);
+    ByteBuffer bb = ByteBuffer.wrap(copy);
+    return ((copy.length == 1) ? bb.get()
+            : ((copy.length == 2) ? bb.getShort() : ((copy.length == 4) ? bb.getInt() : bb.getLong())));
+  }
+
+  public static boolean isCurrentValueInteger(byte[] qual) {
+    return !Internal.isFloat(qual);
+  }
+
+  public static byte[] longToOptimalByteArray(long value) {
+    final byte[] v;
+    if (Byte.MIN_VALUE <= value && value <= Byte.MAX_VALUE) {
+      v = new byte[] { (byte) value };
+    } else if (Short.MIN_VALUE <= value && value <= Short.MAX_VALUE) {
+      v = Bytes.fromShort((short) value);
+    } else if (Integer.MIN_VALUE <= value && value <= Integer.MAX_VALUE) {
+      v = Bytes.fromInt((int) value);
+    } else {
+      v = Bytes.fromLong(value);
+    }
+
+    final short flags = (short) (v.length - 1);  // Just the length.
+    return v;
+  }
+
+  public static boolean fitsInFloat(double v) {
+    return ((float) v) == v;
+  }
+
+  public static byte[] doubleToOptimalByteArray(double value) {
+    if (fitsInFloat(value)) {
+      return Bytes.fromInt(Float.floatToRawIntBits((float)value));
+    } else {
+      return Bytes.fromLong(Double.doubleToRawLongBits(value));
+    }
+  }
+  /* [att] <*/
 }

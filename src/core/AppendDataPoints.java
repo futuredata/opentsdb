@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import net.opentsdb.core.Internal.Cell;
+import net.opentsdb.utils.Config;
 import net.opentsdb.utils.DateTime;
 
 import org.hbase.async.Bytes;
@@ -160,6 +161,27 @@ public class AppendDataPoints {
           has_duplicates = true;
           qual_length -= duplicate.qualifier.length;
           val_length -= duplicate.value.length;
+          if (tsdb.config.resolve_duplicates_method() == Config.RESOLVE_DUPLICATION_METHOD_SUM) {
+            if (Internal.isFloat(q) && Internal.isFloat(duplicate.qualifier)) {
+              double newVal = Internal.getValueAsDouble(v);
+              double oldVal = Internal.getValueAsDouble(duplicate.value);
+              double sumVal = newVal + oldVal;
+              v = Internal.doubleToOptimalByteArray(sumVal);
+            } else if (!Internal.isFloat(q) && !Internal.isFloat(duplicate.qualifier)) {
+              long newVal = Internal.getValueAsLong(v);
+              long oldVal = Internal.getValueAsLong(duplicate.value);
+              long sumVal = newVal + oldVal;
+              v = Internal.longToOptimalByteArray(sumVal);
+            } else {
+              //TODO: mixed-type not support now
+              LOG.info("Sum duplication values, mixed-type not support now");
+            }
+            if (v.length > vlen) {
+              byte flags = q[q.length -1];
+              q[q.length - 1] = (byte) ((flags & 0xF8) | v.length);
+              vlen = v.length;
+            }
+          }
         }
   
         qual_length += q.length;

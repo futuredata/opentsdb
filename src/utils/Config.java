@@ -52,6 +52,9 @@ import com.google.common.collect.ImmutableMap;
 public class Config {
   private static final Logger LOG = LoggerFactory.getLogger(Config.class);
 
+  public static final int RESOLVE_DUPLICATION_METHOD_OVERWRITE = 1;
+  public static final int RESOLVE_DUPLICATION_METHOD_SUM = 2;
+
   /** Flag to determine if we're running under Windows or not */
   public static final boolean IS_WINDOWS =
       System.getProperty("os.name", "").contains("Windows");
