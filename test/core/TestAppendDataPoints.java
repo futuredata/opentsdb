@@ -288,7 +288,36 @@ public class TestAppendDataPoints extends BaseTsdbTest {
       fail("Expected an IllegalDataException");
     } catch (IllegalDataException iae) { }
   }
-  
+
+  @Test
+  public void sumLongDuplicates() throws Exception {
+    setDataPointStorage();
+    Whitebox.setInternalState(config, "repair_appends", true);
+    Whitebox.setInternalState(config, "resolve_duplicates_method", 2);
+    final byte[] SUM_DUP_VAL = Internal.longToOptimalByteArray(Internal.getValueAsLong(DPV2) * 2);
+    final KeyValue kv = new KeyValue(ROW_KEY, CF,
+            AppendDataPoints.APPEND_COLUMN_QUALIFIER,
+            MockBase.concatByteArrays(DPQ_MS, DPV, DPQ_S, DPV2, DPQ_S, DPV2));
+    final AppendDataPoints adp = new AppendDataPoints();
+    final Collection<Cell>cells = adp.parseKeyValue(tsdb, kv);
+    assertEquals(2, cells.size());
+    final Iterator<Cell> iterator = cells.iterator();
+    Cell cell = iterator.next();
+    assertArrayEquals(DPV, cell.value);
+    assertEquals(1356998400128L, cell.timestamp(1356998400));
+    cell = iterator.next();
+    assertArrayEquals(SUM_DUP_VAL, cell.value);
+    assertEquals(1356998402000L, cell.timestamp(1356998400));
+    assertArrayEquals(MockBase.concatByteArrays(DPQ_MS, DPQ_S), adp.qualifier());
+    assertArrayEquals(MockBase.concatByteArrays(DPV, SUM_DUP_VAL), adp.value());
+    verify(client, times(1)).put(any(PutRequest.class));
+
+    adp.repairedDeferred().join();
+    assertArrayEquals(
+            MockBase.concatByteArrays(DPQ_MS, DPV, DPQ_S, SUM_DUP_VAL),
+            storage.getColumn(ROW_KEY, AppendDataPoints.APPEND_COLUMN_QUALIFIER));
+  }
+
   @Test
   public void repairDuplicates() throws Exception {
     setDataPointStorage();
