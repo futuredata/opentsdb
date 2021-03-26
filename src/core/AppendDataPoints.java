@@ -162,10 +162,12 @@ public class AppendDataPoints {
           qual_length -= duplicate.qualifier.length;
           val_length -= duplicate.value.length;
           if (tsdb.config.resolve_duplicates_method() == Config.RESOLVE_DUPLICATION_METHOD_SUM) {
+            LOG.info("vlen {}, v.length {}, newval isFloat {}, oldval isfloat {}", vlen, v.length,Internal.isFloat(q),Internal.isFloat(duplicate.qualifier));
             if (Internal.isFloat(q) && Internal.isFloat(duplicate.qualifier)) {
               double newVal = Internal.getValueAsDouble(v);
               double oldVal = Internal.getValueAsDouble(duplicate.value);
               double sumVal = newVal + oldVal;
+              LOG.info("newVal {} , oldVal {}, sumval {}", newVal, oldVal, sumVal);
               v = Internal.doubleToOptimalByteArray(sumVal);
             } else if (!Internal.isFloat(q) && !Internal.isFloat(duplicate.qualifier)) {
               long newVal = Internal.getValueAsLong(v);
@@ -178,7 +180,7 @@ public class AppendDataPoints {
             }
             if (v.length > vlen) {
               byte flags = q[q.length -1];
-              q[q.length - 1] = (byte) ((flags & 0xF8) | v.length);
+              q[q.length - 1] = (byte) ((flags & 0xF8) | (v.length - 1));
               vlen = v.length;
             }
           }
