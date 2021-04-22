@@ -41,7 +41,7 @@ import net.opentsdb.utils.DateTime;
  * @since 2.0
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public final class TSQuery {
+public class TSQuery {
 
   /** User given start date/time, could be relative or absolute */
   private String start;

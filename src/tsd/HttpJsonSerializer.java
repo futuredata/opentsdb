@@ -279,7 +279,32 @@ class HttpJsonSerializer extends HttpSerializer {
       throw new BadRequestException("Unable to parse the given JSON", iae);
     }
   }
-  
+
+  /**
+   * Parses a timeseries data query
+   * @return A TSQuery with data ready to validate
+   * @throws JSONException if parsing failed
+   * @throws BadRequestException if the content was missing or parsing failed
+   */
+  public <T extends TSQuery> T parseQueryV1(Class<T> clazz) {
+    final String json = query.getContent();
+    if (json == null || json.isEmpty()) {
+      throw new BadRequestException(HttpResponseStatus.BAD_REQUEST,
+              "Missing message content",
+              "Supply valid JSON formatted data in the body of your request");
+    }
+    try {
+      T data_query =  JSON.parseToObject(json, clazz);
+      // Filter out duplicate queries
+      Set<TSSubQuery> query_set = new LinkedHashSet<TSSubQuery>(data_query.getQueries());
+      data_query.getQueries().clear();
+      data_query.getQueries().addAll(query_set);
+      return data_query;
+    } catch (IllegalArgumentException iae) {
+      throw new BadRequestException("Unable to parse the given JSON", iae);
+    }
+  }
+
   /**
    * Parses a last data point query
    * @return A LastPointQuery to work with

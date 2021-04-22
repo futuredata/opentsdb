@@ -253,7 +253,19 @@ public abstract class HttpSerializer {
         this.getClass().getCanonicalName() + 
         " has not implemented parseQueryV1");
   }
-  
+
+  /**
+   * Parses a timeseries data query
+   * @return A TSQuery with data ready to validate
+   * @throws BadRequestException if the plugin has not implemented this method
+   */
+  public <T extends TSQuery> T parseQueryV1(Class<T> clazz) {
+    throw new BadRequestException(HttpResponseStatus.NOT_IMPLEMENTED,
+            "The requested API endpoint has not been implemented",
+            this.getClass().getCanonicalName() +
+                    " has not implemented parseQueryV1");
+  }
+
   /**
    * Parses a last data point query
    * @return A LastPointQuery to work with
