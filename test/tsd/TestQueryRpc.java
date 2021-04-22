@@ -648,6 +648,24 @@ public final class TestQueryRpc {
   }
 
   @Test
+  public void gexpHighestMax() throws Exception {
+    final DataPoints[] datapoints = new DataPoints[1];
+    datapoints[0] = new MockDataPoints().getMock();
+//    datapoints[1] = new MockDataPoints().getMock();
+    when(query_result.runAsync()).thenReturn(
+            Deferred.fromResult(datapoints));
+
+    final HttpQuery query = NettyMocks.getQuery(tsdb,
+            "/api/query/gexp?start=2013/01/01-01:00:00&exp=highestMax(sum:sys.cpu.user{dc=*},1)");
+    NettyMocks.mockChannelFuture(query);
+    rpc.execute(tsdb, query);
+    assertEquals(query.response().getStatus(), HttpResponseStatus.OK);
+    final String json =
+            query.response().getContent().toString(Charset.forName("UTF-8"));
+    assertTrue(json.contains("\"metric\":\"system.cpu.user\""));
+  }
+
+  @Test
   public void gexp() throws Exception {
     final DataPoints[] datapoints = new DataPoints[1];
     datapoints[0] = new MockDataPoints().getMock();
