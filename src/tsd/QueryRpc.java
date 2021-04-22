@@ -139,7 +139,7 @@ final class QueryRpc implements HttpRpc {
     public void validateAndSetQuery() {
       super.validateAndSetQuery();
       if (topNLimit <= 0) {
-        throw new IllegalArgumentException("topNLimit is missing or must be a positive number");
+        throw new IllegalArgumentException("topNLimit is missing or not a positive number");
       }
     }
   }
